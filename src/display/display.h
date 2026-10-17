@@ -5,3 +5,4 @@
 #define BACKGROUND_B 51
 
 int init_display();
+int render_frame();

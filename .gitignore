@@ -1,5 +1,6 @@
 build/
 roms/
+bios/
 gb
 .gdb_history
 compile_commands.json

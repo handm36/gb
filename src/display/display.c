@@ -11,16 +11,31 @@ static SDL_Texture *texture;
 int init_display() {
   if (!SDL_CreateWindowAndRenderer("GameBoy", DISPLAY_WIDTH, DISPLAY_HEIGHT,
                                    SDL_WINDOW_RESIZABLE, &window, &renderer)) {
-    printf("Couldn't create window/renderer: %s", SDL_GetError());
+    fprintf(stderr, "Couldn't create window/renderer: %s\n", SDL_GetError());
     return SDL_APP_FAILURE;
   }
+
   SDL_SetRenderLogicalPresentation(renderer, DISPLAY_WIDTH, DISPLAY_HEIGHT,
                                    SDL_LOGICAL_PRESENTATION_LETTERBOX);
 
   texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888,
                               SDL_TEXTUREACCESS_STREAMING, DISPLAY_WIDTH,
                               DISPLAY_HEIGHT);
+
   SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
+
+  return SDL_APP_CONTINUE;
+}
+
+int render_frame() {
+  SDL_SetRenderDrawColor(renderer, BACKGROUND_R, BACKGROUND_G, BACKGROUND_B,
+                         SDL_ALPHA_OPAQUE);
+  SDL_RenderClear(renderer);
+
+  if (!SDL_RenderPresent(renderer)) {
+    fprintf(stderr, "Couldn't render screen: %s", SDL_GetError());
+    return SDL_APP_FAILURE;
+  }
 
   return SDL_APP_CONTINUE;
 }
