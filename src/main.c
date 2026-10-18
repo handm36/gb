@@ -9,7 +9,10 @@
 #include <stdlib.h>
 
 GB_Memory mem = {0};
-GB_CPU cpu = {0};
+GB_CPU cpu = {.SP = 0xFFFE,
+              .PC = 0x100,
+              .registers = {0, 0x13, 0, 0xD8, 0x1, 0x4D, 0, 0x1},
+              .flags_reg = 0b10000000};
 
 void free_items(GB_Memory *mem) {
   free(mem->bios_ROM);
@@ -91,6 +94,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
 
   if (parse_file(&mem.bios_ROM, &mem.bios_size, argv[2]) == SDL_APP_FAILURE) {
     return SDL_APP_FAILURE;
+  }
+
+  if (read8(&mem, 0x014D) != 0) {
+    cpu.flags_reg |= 0b00110000;
   }
 
   printf("%s\n", resolve_addr(&mem, 0x0134));

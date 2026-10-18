@@ -1,7 +1,4 @@
 #include "mem.h"
-#include "gb.h"
-#include <stdint.h>
-#include <string.h>
 
 uint8_t *resolve_addr(GB_Memory *mem, uint16_t addr) {
   if (addr <= 0x7FFF && addr < mem->game_size) {
