@@ -1,7 +1,7 @@
 #pragma once
+#include "cpu/helper.h"
+#include "cpu/mem.h"
 #include "gb.h"
-#include "helper.h"
-#include "mem.h"
 #include <stdint.h>
 
 #define Z_FLAG_LOC 7
