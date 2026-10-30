@@ -1,3 +1,5 @@
+#include "cpu/cpu.h"
+#include "cpu/helper.h"
 #define SDL_MAIN_USE_CALLBACKS 1
 #include "cpu/mem.h"
 #include "display/display.h"
@@ -100,7 +102,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     cpu.flags_reg |= 0b00110000;
   }
 
-  printf("%s\n", resolve_addr(&mem, 0x0134));
+  uint8_t checksum = 0;
+  for (uint16_t address = 0x0134; address <= 0x014C; address++) {
+    checksum = checksum - read8(&mem, address) - 1;
+  }
+
+  if (checksum != 0) {
+    cpu.flags_reg |= H_FLAG | C_FLAG;
+  }
 
   return SDL_APP_CONTINUE;
 }
@@ -114,7 +123,31 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
 }
 
 SDL_AppResult SDL_AppIterate(void *appstate) {
+
+  // Logging
+
+  printf("A: %02X ", cpu.registers[7]);
+  printf("F: %02X ", cpu.flags_reg);
+  printf("B: %02X ", cpu.registers[0]);
+  printf("C: %02X ", cpu.registers[1]);
+  printf("D: %02X ", cpu.registers[2]);
+  printf("E: %02X ", cpu.registers[3]);
+  printf("H: %02X ", cpu.registers[4]);
+  printf("L: %02X ", cpu.registers[5]);
+  printf("SP: %04X ", cpu.SP);
+  printf("PC: 00:%04X ", cpu.PC);
+  printf("(%02X ", read8(&mem, cpu.PC));
+  printf("%02X ", read8(&mem, cpu.PC + 1));
+  printf("%02X ", read8(&mem, cpu.PC + 2));
+  printf("%02X)\n", read8(&mem, cpu.PC + 3));
+
   render_frame();
+  if (run_cpu(&cpu, &mem) == 1) {
+    // printf("Unknown instruction: 0x%02X\nat: 0x%04X\n", read8(&mem, cpu.PC),
+    //       cpu.PC);
+    return SDL_APP_SUCCESS;
+  }
+
   return SDL_APP_CONTINUE;
 }
 

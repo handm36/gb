@@ -1,4 +1,5 @@
 #include "cpu.h"
+#include <stdint.h>
 
 // op_b3 uses the same bits as r8 as the second operand
 static inline uint8_t op_b3(uint8_t inst) { return (inst >> 3) & 0x7; }
@@ -6,6 +7,35 @@ static inline uint8_t op_b3(uint8_t inst) { return (inst >> 3) & 0x7; }
 static inline uint8_t op_r16(uint8_t inst) { return (inst >> 4) & 0x3; }
 static inline uint8_t op_r8(uint8_t inst) { return inst & 0x7; }
 static inline uint8_t op_carry(uint8_t inst) { return (inst >> 3) & 1; }
+static inline uint8_t op_cond(uint8_t inst) { return (inst >> 3) & 0x3; }
+
+// 0 to run
+static int check_cond(GB_CPU *cpu, uint8_t cond) {
+  switch (cond & 0x3) {
+  case 0b00:
+    if (!(cpu->flags_reg & Z_FLAG)) {
+      return 0;
+    }
+    break;
+  case 0b01:
+    if (cpu->flags_reg & Z_FLAG) {
+      return 0;
+    }
+    break;
+  case 0b10:
+    if (!(cpu->flags_reg & C_FLAG)) {
+      return 0;
+    }
+    break;
+  case 0b11:
+    if (cpu->flags_reg & C_FLAG) {
+      return 0;
+    }
+    break;
+  }
+
+  return 1;
+}
 
 static void inst_add_adc8(GB_CPU *cpu, uint8_t value, uint8_t is_adc) {
   uint8_t temp = cpu->registers[7];
@@ -66,7 +96,10 @@ static void inst_ld16_mem(GB_Memory *mem, uint16_t addr, uint16_t value) {
 }
 
 static int group_0(GB_CPU *cpu, GB_Memory *mem, uint8_t inst) {
-  if ((inst & 0b00001111) == 0b00000001) {
+  if (inst == 0) {
+    // nop
+    cpu->PC += 1;
+  } else if ((inst & 0b00001111) == 0b00000001) {
 
     // ld r16, imm16
     inst_ld16_reg(cpu, op_r16(inst), read16(mem, cpu->PC + 1));
@@ -126,11 +159,11 @@ static int group_0(GB_CPU *cpu, GB_Memory *mem, uint8_t inst) {
 
     cpu->flags_reg = cpu->flags_reg & C_FLAG;
     cpu->flags_reg |= !(uint8_t)(r8 + 1) << Z_FLAG_LOC;
-    cpu->flags_reg |= carry_4(r8, 1, 0) << H_FLAG_LOC;
+    cpu->flags_reg |= carry_4(r8 & 0xF, 1, 0) << H_FLAG_LOC;
 
     cpu->PC += 1;
 
-  } else if ((inst & 0b0000111) == 0b00000100) {
+  } else if ((inst & 0b0000111) == 0b00000101) {
 
     // dec r8
     uint8_t r8 = read_reg8(cpu, mem, op_b3(inst));
@@ -148,6 +181,20 @@ static int group_0(GB_CPU *cpu, GB_Memory *mem, uint8_t inst) {
     // ld r8, imm8
     inst_ld8(cpu, mem, op_b3(inst), read8(mem, cpu->PC + 1));
     cpu->PC += 2;
+
+  } else if ((inst & 0b00111111) == 0b00011000) {
+
+    // jr imm8
+    cpu->PC += ((int8_t)read8(mem, cpu->PC + 1)) + 2;
+
+  } else if ((inst & 0b00100111) == 0b00100000) {
+
+    // jr cond, imm8
+    if (check_cond(cpu, op_cond(inst))) {
+      cpu->PC += 2;
+    } else {
+      cpu->PC += ((int8_t)read8(mem, cpu->PC + 1)) + 2;
+    }
 
   } else {
     return 1;
@@ -236,6 +283,11 @@ static int group_3(GB_CPU *cpu, GB_Memory *mem, uint8_t inst) {
     // cp a, imm8
     inst_cp8(cpu, read8(mem, cpu->PC + 1));
     cpu->PC += 2;
+
+  } else if ((inst & 0b00111111) == 0b00000011) {
+
+    // jp imm16
+    cpu->PC = read16(mem, cpu->PC + 1);
 
   } else if ((inst & 0b00111111) == 0b00100010) {
 
