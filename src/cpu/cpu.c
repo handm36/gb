@@ -1,5 +1,4 @@
 #include "cpu.h"
-#include <stdint.h>
 
 // op_b3 uses the same bits as r8 as the second operand
 static inline uint8_t op_b3(uint8_t inst) { return (inst >> 3) & 0x7; }
@@ -9,32 +8,32 @@ static inline uint8_t op_r8(uint8_t inst) { return inst & 0x7; }
 static inline uint8_t op_carry(uint8_t inst) { return (inst >> 3) & 1; }
 static inline uint8_t op_cond(uint8_t inst) { return (inst >> 3) & 0x3; }
 
-// 0 to run
+// 1 to run
 static int check_cond(GB_CPU *cpu, uint8_t cond) {
   switch (cond & 0x3) {
   case 0b00:
     if (!(cpu->flags_reg & Z_FLAG)) {
-      return 0;
+      return 1;
     }
     break;
   case 0b01:
     if (cpu->flags_reg & Z_FLAG) {
-      return 0;
+      return 1;
     }
     break;
   case 0b10:
     if (!(cpu->flags_reg & C_FLAG)) {
-      return 0;
+      return 1;
     }
     break;
   case 0b11:
     if (cpu->flags_reg & C_FLAG) {
-      return 0;
+      return 1;
     }
     break;
   }
 
-  return 1;
+  return 0;
 }
 
 static void inst_add_adc8(GB_CPU *cpu, uint8_t value, uint8_t is_adc) {
@@ -95,6 +94,21 @@ static void inst_ld16_mem(GB_Memory *mem, uint16_t addr, uint16_t value) {
   write16(mem, addr, value);
 }
 
+static uint16_t inst_pop16(GB_CPU *cpu, GB_Memory *mem) {
+  uint16_t value = read16(mem, cpu->SP);
+
+  cpu->SP += 2;
+
+  return value;
+}
+
+static void inst_push16(GB_CPU *cpu, GB_Memory *mem, uint16_t value) {
+  cpu->SP -= 1;
+  write8(mem, cpu->SP, (value >> 8));
+  cpu->SP -= 1;
+  write8(mem, cpu->SP, (value & 0xFF));
+}
+
 static int group_0(GB_CPU *cpu, GB_Memory *mem, uint8_t inst) {
   if (inst == 0) {
     // nop
@@ -117,6 +131,21 @@ static int group_0(GB_CPU *cpu, GB_Memory *mem, uint8_t inst) {
     // ld a, [r16mem]
     inst_ld8(cpu, mem, 7, read8(mem, read_reg16mem(cpu, op_r16(inst))));
     cpu->PC += 1;
+
+  } else if ((inst & 0b00111111) == 0b00011000) {
+
+    // jr imm8
+    cpu->PC += ((int16_t)(int8_t)read8(mem, cpu->PC + 1));
+    cpu->PC += 2;
+
+  } else if ((inst & 0b00100111) == 0b00100000) {
+
+    // jr cond, imm8
+    if (check_cond(cpu, op_cond(inst))) {
+      cpu->PC += ((int16_t)(int8_t)read8(mem, cpu->PC + 1));
+    }
+
+    cpu->PC += 2;
 
   } else if ((inst & 0b00001111) == 0b00001000) {
 
@@ -181,20 +210,6 @@ static int group_0(GB_CPU *cpu, GB_Memory *mem, uint8_t inst) {
     // ld r8, imm8
     inst_ld8(cpu, mem, op_b3(inst), read8(mem, cpu->PC + 1));
     cpu->PC += 2;
-
-  } else if ((inst & 0b00111111) == 0b00011000) {
-
-    // jr imm8
-    cpu->PC += ((int8_t)read8(mem, cpu->PC + 1)) + 2;
-
-  } else if ((inst & 0b00100111) == 0b00100000) {
-
-    // jr cond, imm8
-    if (check_cond(cpu, op_cond(inst))) {
-      cpu->PC += 2;
-    } else {
-      cpu->PC += ((int8_t)read8(mem, cpu->PC + 1)) + 2;
-    }
 
   } else {
     return 1;
@@ -284,10 +299,72 @@ static int group_3(GB_CPU *cpu, GB_Memory *mem, uint8_t inst) {
     inst_cp8(cpu, read8(mem, cpu->PC + 1));
     cpu->PC += 2;
 
+  } else if ((inst & 0b00100111) == 0) {
+
+    // ret cond
+    if (check_cond(cpu, op_cond(inst))) {
+      cpu->PC = inst_pop16(cpu, mem);
+    } else {
+      cpu->PC += 1;
+    }
+
+  } else if ((inst & 0b00111111) == 0b00001001) {
+
+    // ret
+    cpu->PC = inst_pop16(cpu, mem);
+
+  } else if ((inst & 0b00111111) == 0b00011001) {
+
+    // reti
+    cpu->PC = inst_pop16(cpu, mem);
+    cpu->IME = 1;
+
+  } else if ((inst & 0b00100111) == 0b00000010) {
+
+    // jp cond, imm16
+    if (check_cond(cpu, op_cond(inst))) {
+      cpu->PC = read16(mem, cpu->PC + 1);
+    } else {
+      cpu->PC += 3;
+    }
+
   } else if ((inst & 0b00111111) == 0b00000011) {
 
     // jp imm16
     cpu->PC = read16(mem, cpu->PC + 1);
+
+  } else if ((inst & 0b00111111) == 0b00101001) {
+
+    // jp hl
+    cpu->PC = read_reg16(cpu, 2);
+
+  } else if ((inst & 0b00100111) == 0b00000100) {
+
+    // call cond, imm16
+    if (check_cond(cpu, op_cond(inst))) {
+      inst_push16(cpu, mem, cpu->PC + 3);
+      cpu->PC = read16(mem, cpu->PC + 1);
+    } else {
+      cpu->PC += 3;
+    }
+
+  } else if ((inst & 0b00111111) == 0b00001101) {
+
+    // call imm16
+    inst_push16(cpu, mem, cpu->PC + 3);
+    cpu->PC = read16(mem, cpu->PC + 1);
+
+  } else if ((inst & 0b00001111) == 0b00000001) {
+
+    // pop r16stk
+    write_reg16stk(cpu, op_r16(inst), inst_pop16(cpu, mem));
+    cpu->PC += 1;
+
+  } else if ((inst & 0b00001111) == 0b00000101) {
+
+    // push r16stk
+    inst_push16(cpu, mem, read_reg16stk(cpu, op_r16(inst)));
+    cpu->PC += 1;
 
   } else if ((inst & 0b00111111) == 0b00100010) {
 
@@ -350,6 +427,18 @@ static int group_3(GB_CPU *cpu, GB_Memory *mem, uint8_t inst) {
 
     // ld sp, hl
     inst_ld16_reg(cpu, 3, read_reg16(cpu, 2));
+    cpu->PC += 1;
+
+  } else if ((inst & 0b00111111) == 0b00110011) {
+
+    // di
+    cpu->IME = 0;
+    cpu->PC += 1;
+
+  } else if ((inst & 0b00111111) == 0b00111011) {
+
+    // ei
+    cpu->IME = ~0;
     cpu->PC += 1;
 
   } else {

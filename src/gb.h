@@ -25,4 +25,5 @@ typedef struct {
   uint8_t IR;
   uint8_t registers[8]; // in the order of B, C, D, E, H, L, [HL], A
   uint8_t flags_reg;
+  uint8_t IME;
 } GB_CPU;

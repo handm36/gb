@@ -14,7 +14,8 @@ GB_Memory mem = {0};
 GB_CPU cpu = {.SP = 0xFFFE,
               .PC = 0x100,
               .registers = {0, 0x13, 0, 0xD8, 0x1, 0x4D, 0, 0x1},
-              .flags_reg = 0b10000000};
+              .flags_reg = 0b10000000,
+              .IME = 0};
 
 void free_items(GB_Memory *mem) {
   free(mem->bios_ROM);
@@ -141,10 +142,10 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
   printf("%02X ", read8(&mem, cpu.PC + 2));
   printf("%02X)\n", read8(&mem, cpu.PC + 3));
 
-  render_frame();
+  // render_frame();
   if (run_cpu(&cpu, &mem) == 1) {
-    // printf("Unknown instruction: 0x%02X\nat: 0x%04X\n", read8(&mem, cpu.PC),
-    //       cpu.PC);
+    fprintf(stderr, "Unknown instruction: 0x%02X\nat: 0x%04X\n",
+            read8(&mem, cpu.PC), cpu.PC);
     return SDL_APP_SUCCESS;
   }
 

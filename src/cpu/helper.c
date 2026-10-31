@@ -91,6 +91,31 @@ uint16_t read_reg16mem(GB_CPU *cpu, uint8_t pos) {
   return val;
 }
 
+uint16_t read_reg16stk(GB_CPU *cpu, uint8_t pos) {
+  uint16_t val = 0;
+  switch (pos) {
+  case 0:
+    val = (cpu->registers[0] << 8) | cpu->registers[1];
+    break;
+  case 1:
+    val = (cpu->registers[2] << 8) | cpu->registers[3];
+    break;
+  case 2:
+    // hl
+    val = (cpu->registers[4] << 8) | cpu->registers[5];
+    break;
+  case 3:
+    // af
+    val = (cpu->registers[7] << 8) | cpu->flags_reg;
+    break;
+  default:
+    val = 0;
+    break;
+  }
+
+  return val;
+}
+
 void write_reg8(GB_CPU *cpu, GB_Memory *mem, uint8_t pos, uint8_t value) {
   if (pos == 6) {
     uint16_t hl = (cpu->registers[4] << 8) | cpu->registers[5];
@@ -119,6 +144,30 @@ void write_reg16(GB_CPU *cpu, uint8_t pos, uint16_t value) {
     break;
   case 3:
     cpu->SP = value;
+    break;
+  }
+}
+
+void write_reg16stk(GB_CPU *cpu, uint8_t pos, uint16_t value) {
+  uint8_t hval = value >> 8;
+  uint8_t lval = value & 0xFF;
+
+  switch (pos) {
+  case 0:
+    cpu->registers[0] = hval;
+    cpu->registers[1] = lval;
+    break;
+  case 1:
+    cpu->registers[2] = hval;
+    cpu->registers[3] = lval;
+    break;
+  case 2:
+    cpu->registers[4] = hval;
+    cpu->registers[5] = lval;
+    break;
+  case 3:
+    cpu->registers[7] = hval;
+    cpu->flags_reg = lval;
     break;
   }
 }
