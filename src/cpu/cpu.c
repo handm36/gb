@@ -1,4 +1,5 @@
 #include "cpu.h"
+#include <stdint.h>
 
 // op_b3 uses the same bits as r8 as the second operand
 static inline uint8_t op_b3(uint8_t inst) { return (inst >> 3) & 0x7; }
@@ -109,6 +110,81 @@ static void inst_push16(GB_CPU *cpu, GB_Memory *mem, uint16_t value) {
   write8(mem, cpu->SP, (value & 0xFF));
 }
 
+static void inst_rotate_left8(GB_CPU *cpu, GB_Memory *mem, uint8_t reg) {
+  uint8_t value = read_reg8(cpu, mem, reg);
+
+  // int size - 1 = 7
+  value = (value << 1) | (value >> 7);
+  write_reg8(cpu, mem, reg, value);
+
+  cpu->flags_reg = ((!value) << Z_FLAG_LOC) | ((value & 0x1) << C_FLAG_LOC);
+}
+
+static void inst_rotate_right8(GB_CPU *cpu, GB_Memory *mem, uint8_t reg) {
+  uint8_t value = read_reg8(cpu, mem, reg);
+  uint8_t firstbit = value & 0x1;
+
+  // int size - 1 = 7
+  value = (value >> 1) | (value << 7);
+  write_reg8(cpu, mem, reg, value);
+
+  cpu->flags_reg = ((!value) << Z_FLAG_LOC) | (firstbit << C_FLAG_LOC);
+}
+
+static void inst_rotate_left_through8(GB_CPU *cpu, GB_Memory *mem,
+                                      uint8_t reg) {
+  uint8_t value = read_reg8(cpu, mem, reg);
+  uint8_t lastbit = value >> 7;
+
+  // int size - 1 = 7
+  value = (value << 1) | (cpu->flags_reg & (C_FLAG)) >> C_FLAG_LOC;
+  write_reg8(cpu, mem, reg, value);
+
+  cpu->flags_reg = ((!value) << Z_FLAG_LOC) | (lastbit << C_FLAG_LOC);
+}
+
+static void inst_rotate_right_through8(GB_CPU *cpu, GB_Memory *mem,
+                                       uint8_t reg) {
+  uint8_t value = read_reg8(cpu, mem, reg);
+  uint8_t firstbit = value & 0x1;
+
+  // int size - 1 = 7
+  value = (value >> 1) | (cpu->flags_reg & (C_FLAG)) << (7 - C_FLAG_LOC);
+  write_reg8(cpu, mem, reg, value);
+
+  cpu->flags_reg = ((!value) << Z_FLAG_LOC) | (firstbit << C_FLAG_LOC);
+}
+
+static void inst_shift_left8(GB_CPU *cpu, GB_Memory *mem, uint8_t reg) {
+  uint8_t value = read_reg8(cpu, mem, reg);
+  uint8_t lastbit = value >> 7;
+
+  value = (value << 1);
+  write_reg8(cpu, mem, reg, value);
+
+  cpu->flags_reg = ((!value) << Z_FLAG_LOC) | (lastbit << C_FLAG_LOC);
+}
+
+static void inst_shift_right8(GB_CPU *cpu, GB_Memory *mem, uint8_t reg,
+                              uint8_t is_arith) {
+  uint8_t value = read_reg8(cpu, mem, reg);
+  uint8_t firstbit = value & 0x1;
+
+  value = (value >> 1) | ((!!is_arith << 7) & (value & 0x10));
+  write_reg8(cpu, mem, reg, value);
+
+  cpu->flags_reg = ((!value) << Z_FLAG_LOC) | (firstbit << C_FLAG_LOC);
+}
+
+static void inst_swap8(GB_CPU *cpu, GB_Memory *mem, uint8_t reg) {
+  uint8_t value = read_reg8(cpu, mem, reg);
+
+  value = (value >> 4) | (value << 4);
+  write_reg8(cpu, mem, reg, value);
+
+  cpu->flags_reg = (!value) << Z_FLAG_LOC;
+}
+
 static int group_0(GB_CPU *cpu, GB_Memory *mem, uint8_t inst) {
   if (inst == 0) {
     // nop
@@ -211,6 +287,59 @@ static int group_0(GB_CPU *cpu, GB_Memory *mem, uint8_t inst) {
     inst_ld8(cpu, mem, op_b3(inst), read8(mem, cpu->PC + 1));
     cpu->PC += 2;
 
+  } else if ((inst & 0b00000111) == 0b00000111) {
+    switch ((inst >> 3) & 0x7) {
+    case 0b000:
+      // rlca
+      inst_rotate_left8(cpu, mem, 7);
+      cpu->flags_reg &= ~(Z_FLAG);
+
+      break;
+    case 0b001:
+      // rrca
+      inst_rotate_right8(cpu, mem, 7);
+      cpu->flags_reg &= ~(Z_FLAG);
+
+      break;
+    case 0b010:
+      // rla
+      inst_rotate_left_through8(cpu, mem, 7);
+      cpu->flags_reg &= ~(Z_FLAG);
+
+      break;
+    case 0b011:
+      // rra
+      inst_rotate_right_through8(cpu, mem, 7);
+      cpu->flags_reg &= ~(Z_FLAG);
+
+      break;
+    case 0b100:
+      // daa
+      break;
+    case 0b101:
+      // cpl
+      cpu->registers[7] = ~cpu->registers[7];
+
+      cpu->flags_reg |= (N_FLAG | H_FLAG);
+
+      break;
+    case 0b110:
+      // scf
+      cpu->flags_reg &= (N_FLAG | H_FLAG);
+      cpu->flags_reg |= C_FLAG;
+      break;
+    case 0b111:
+      // ccf
+      cpu->flags_reg &= (N_FLAG | H_FLAG);
+      cpu->flags_reg ^= (C_FLAG);
+      break;
+    }
+
+    cpu->PC += 1;
+  } else if (inst == 0b00010000) {
+
+    // stop
+    cpu->PC += 2;
   } else {
     return 1;
   }
@@ -263,7 +392,81 @@ static int group_2(GB_CPU *cpu, GB_Memory *mem, uint8_t inst) {
 }
 
 static int group_3(GB_CPU *cpu, GB_Memory *mem, uint8_t inst) {
-  if ((inst & 0b00110111) == 0b00000110) {
+  if (inst == 0b11001011) {
+
+    // 0xCB Prefix instructions
+    inst = read8(mem, cpu->PC + 1);
+
+    if ((inst & 0b11000000) == 0) {
+      switch ((inst & 0b00111000) >> 3) {
+      case 0b000:
+        // rlc r8
+        inst_rotate_left8(cpu, mem, op_r8(inst));
+
+        break;
+      case 0b001:
+        // rrc r8
+        inst_rotate_right8(cpu, mem, op_r8(inst));
+
+        break;
+      case 0b010:
+        // rl r8
+        inst_rotate_left_through8(cpu, mem, op_r8(inst));
+
+        break;
+      case 0b011:
+        // rr r8
+        inst_rotate_right_through8(cpu, mem, op_r8(inst));
+
+        break;
+      case 0b100:
+        // sla r8
+        inst_shift_left8(cpu, mem, op_r8(inst));
+
+        break;
+      case 0b101:
+        // sra r8
+        inst_shift_right8(cpu, mem, op_r8(inst), 1);
+
+        break;
+      case 0b110:
+        // swap r8
+        inst_swap8(cpu, mem, op_r8(inst));
+
+        break;
+      case 0b111:
+        // srl r8
+        inst_shift_right8(cpu, mem, op_r8(inst), 0);
+
+        break;
+      }
+    } else if ((inst & 0b11000000) == 0b01000000) {
+
+      // bit b3, r8
+      uint8_t value = read_reg8(cpu, mem, op_r8(inst));
+      value = (value >> op_b3(inst)) & 0x1;
+
+      cpu->flags_reg = (cpu->flags_reg & C_FLAG) | H_FLAG;
+      cpu->flags_reg |= ((!value) << Z_FLAG_LOC);
+
+    } else if ((inst & 0b11000000) == 0b10000000) {
+
+      // res b3, r8
+      uint8_t value = read_reg8(cpu, mem, op_r8(inst));
+      value &= ~(1 << op_b3(inst));
+
+      write_reg8(cpu, mem, op_r8(inst), value);
+    } else {
+
+      // set b3, r8
+      uint8_t value = read_reg8(cpu, mem, op_r8(inst));
+      value |= (1 << op_b3(inst));
+
+      write_reg8(cpu, mem, op_r8(inst), value);
+    }
+
+    cpu->PC += 2;
+  } else if ((inst & 0b00110111) == 0b00000110) {
 
     // add/adc a, imm8
     inst_add_adc8(cpu, read8(mem, cpu->PC + 1), op_carry(inst));
@@ -353,6 +556,12 @@ static int group_3(GB_CPU *cpu, GB_Memory *mem, uint8_t inst) {
     // call imm16
     inst_push16(cpu, mem, cpu->PC + 3);
     cpu->PC = read16(mem, cpu->PC + 1);
+
+  } else if ((inst & 0b00000111) == 0b00000111) {
+
+    // rst tgt3
+    inst_push16(cpu, mem, cpu->PC + 1);
+    cpu->PC = op_b3(inst) * 8;
 
   } else if ((inst & 0b00001111) == 0b00000001) {
 
