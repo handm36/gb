@@ -14,4 +14,4 @@
 #define H_FLAG (1 << H_FLAG_LOC)
 #define C_FLAG (1 << C_FLAG_LOC)
 
-int run_cpu(GB_CPU *cpu, GB_Memory *mem);
+int run_cpu(GB_CPU *cpu, GB_Memory *mem, uint16_t *cycles);

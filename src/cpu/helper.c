@@ -32,9 +32,10 @@ uint8_t borrow(uint8_t x, uint8_t y, uint8_t z) {
   return 0;
 }
 
-uint8_t read_reg8(GB_CPU *cpu, GB_Memory *mem, uint8_t pos) {
+uint8_t read_reg8(GB_CPU *cpu, GB_Memory *mem, uint8_t pos, uint16_t *cycles) {
   if (pos == 6) {
     uint16_t hl = (cpu->registers[4] << 8) | cpu->registers[5];
+    (*cycles) += 1;
     return read8(mem, hl);
   }
 
@@ -116,9 +117,11 @@ uint16_t read_reg16stk(GB_CPU *cpu, uint8_t pos) {
   return val;
 }
 
-void write_reg8(GB_CPU *cpu, GB_Memory *mem, uint8_t pos, uint8_t value) {
+void write_reg8(GB_CPU *cpu, GB_Memory *mem, uint8_t pos, uint8_t value,
+                uint16_t *cycles) {
   if (pos == 6) {
     uint16_t hl = (cpu->registers[4] << 8) | cpu->registers[5];
+    (*cycles) += 1;
     write8(mem, hl, value);
   } else {
     cpu->registers[pos] = value;

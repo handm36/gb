@@ -17,6 +17,8 @@ GB_CPU cpu = {.SP = 0xFFFE,
               .flags_reg = 0b10000000,
               .IME = 0};
 
+static uint16_t cycles = 0;
+
 void free_items(GB_Memory *mem) {
   free(mem->bios_ROM);
   free(mem->game_ROM);
@@ -143,7 +145,7 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
   printf("%02X)\n", read8(&mem, cpu.PC + 3));
 
   // render_frame();
-  if (run_cpu(&cpu, &mem) == 1) {
+  if (run_cpu(&cpu, &mem, &cycles) == 1) {
     fprintf(stderr, "Unknown instruction: 0x%02X\nat: 0x%04X\n",
             read8(&mem, cpu.PC), cpu.PC);
     return SDL_APP_SUCCESS;
